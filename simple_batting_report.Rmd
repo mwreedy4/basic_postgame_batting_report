@@ -1,0 +1,139 @@
+---
+title: "Postgame Batting Report"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE) #Code Won't Show Up In PDF
+
+library(tidyverse) #Bunch Of Packages In One
+library(knitr) # Helps Knit
+library(kableExtra) #Makes Tables
+
+pbp <- read_csv("trackman.csv")
+```
+
+
+```{r}
+
+#Filters All of Reyes' Pitches
+reyes <- pbp %>%
+  filter(Batter == "Reyes, Luca")
+
+#Filters All Of Reyes' Balls In Play
+in_play <- reyes %>%
+  filter(TaggedHitType != "Undefined")
+
+#Takes The Max Exit Velocity
+max_exit_velo <- in_play %>%
+  summarize(max_exit_velo = ifelse(all(is.na(ExitSpeed)), 0,
+                                   max(ExitSpeed, na.rm = TRUE)))
+
+#Checks to See If a Ball Is Hit 95+
+total_hard_hit <- in_play %>%
+  summarize(hard_hit_balls = ifelse(all(is.na(ExitSpeed)), 0,
+                                    sum(ExitSpeed >= 95, na.rm = TRUE)))
+
+#Takes The Max Hit Distance
+max_distance <- in_play %>%
+  summarize(max_distance = ifelse(all(is.na(Distance)), 0, 
+                                  max(Distance, na.rm = TRUE)))
+
+
+#Puts All Metrics In Data Frame
+batted_ball <- data.frame(
+  "Metrics" = c("Max Exit Velo (mph)" ,
+                "Hard Hit Balls",
+                "Max Hit Distance (ft)"),
+  
+  "Value" = c(
+    round(max_exit_velo$max_exit_velo, 2),
+    as.integer(total_hard_hit$hard_hit_balls),
+    round(max_distance$max_distance, 2)
+  )
+)
+
+
+```
+
+
+```{r}
+
+#Finds Row Numbers Of First Pitches
+first_pitch <- which(reyes$PitchofPA == 1)
+
+#Takes The Row Before That
+last_pitch <- c(first_pitch - 1, nrow(reyes))
+
+#Doesn't Include Row 0 (Row 0 Doesn't Exist)
+last_pitch <- last_pitch[last_pitch > 0]
+
+#Makes A Data Frame Of Those Rows
+last_pitch_df <- reyes[last_pitch, ]
+
+
+
+#Move Everything to PlayResult
+last_pitch_df <- last_pitch_df %>%
+  mutate(
+    PlayResult = case_when(
+      KorBB == "Walk" ~ "Walk",
+      KorBB == "Strikeout" ~ "Strikeout",
+      PitchCall == "HitByPitch" ~ "HitByPitch",
+      TRUE ~ PlayResult
+    )
+  )
+
+
+
+#Calculate PA
+plate_appearances <- nrow(last_pitch_df)
+
+#Calculates BB/HBP
+walks_and_hbp <- last_pitch_df %>%
+  filter(PlayResult == "Walk" | PlayResult == "HitByPitch") %>%
+  nrow()
+
+#Calculates SAC
+sacrifice <- last_pitch_df %>%
+    filter(PlayResult %in% c("Sacrifice")) %>%
+    nrow()
+
+#Calculates AB
+at_bats <- plate_appearances - walks_and_hbp - sacrifice
+
+#Calculates Hits
+hits <- last_pitch_df %>%
+  filter(PlayResult %in% c("Single", "Double",
+                           "Triple", "HomeRun")) %>%
+  nrow()
+
+
+
+#Final Line
+final_line <- data.frame(
+  PAs = plate_appearances,
+  ABs = at_bats,
+  Hits = hits
+) 
+
+#Puts Everything In Two Columns
+final_line <- final_line %>%
+  pivot_longer(cols = everything(), 
+               names_to = "Stat", values_to = "Value")
+
+```
+
+
+```{r}
+
+final_line %>%
+  kable("latex", booktabs = TRUE, caption = "Final Line Review") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "bordered"))
+
+batted_ball %>%
+  kable("latex", booktabs = TRUE, caption = "Batted Ball Metrics") %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+
+```
+
